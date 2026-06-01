@@ -1,0 +1,7 @@
+{
+  "success": "تمت العملية بنجاح",
+  "not_found": "المورد غير موجود",
+  "unauthorized": "غير مصرح لك",
+  "forbidden": "تم رفض الوصول",
+  "validation_error": "فشل التحقق"
+}

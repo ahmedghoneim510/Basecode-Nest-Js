@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model User {
+  id             Int      @id @default(autoincrement())
+  password       String
+  email          String   @unique
+  name           String?
+  role           Role     @default(USER)
+  isVerified     Boolean  @default(false)
+  refreshToken   String?
+  post           Post[]
+  profile        Profile?
+  otps           Otp[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Otp {
+  id        Int      @id @default(autoincrement())
+  code      String
+  type      OtpType
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+enum OtpType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+model Category {
+  id    Int @id @default(autoincrement())
+
+  name  String
+
+  posts Post[]
+}
+model Post {
+  id         Int        @id @default(autoincrement())
+  name       String
+  categories Category[]
+  user_id    Int
+  user       User       @relation(fields: [user_id], references: [id])
+  createdAt  DateTime   @default(now())
+}
+
+model Profile {
+  id      Int  @id @default(autoincrement())
+  userId  Int  @unique
+  user    User @relation(fields: [userId], references: [id])
+}

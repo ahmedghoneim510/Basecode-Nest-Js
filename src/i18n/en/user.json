@@ -1,0 +1,7 @@
+{
+  "not_found": "User not found",
+  "created": "User {name} has been created successfully",
+  "email_exists": "Email already registered",
+  "deleted": "User has been deleted",
+  "updated": "User updated successfully"
+}
