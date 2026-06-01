@@ -166,15 +166,48 @@ npm run test           # Unit tests
 npm run test:e2e       # E2E tests
 ```
 
-## Database
+## Database (Prisma)
+
+### Common Commands
 
 ```bash
-npx prisma migrate dev --name <name>   # Create migration
-npx prisma migrate reset               # Reset DB + re-seed
-npx prisma studio                      # Visual DB browser
-npx prisma db seed                     # Run seed
-npx prisma generate                    # Regenerate client
+npx prisma studio                        # Open visual DB browser (localhost:5555)
+npx prisma generate                      # Regenerate Prisma client after schema changes
+npx prisma db seed                       # Run seed file (prisma/seed.ts)
 ```
+
+### Migrations
+
+```bash
+npx prisma migrate dev --name <name>     # Create + apply migration (development)
+npx prisma migrate deploy                # Apply pending migrations (production)
+npx prisma migrate reset                 # Drop DB + re-migrate + re-seed
+npx prisma migrate status                # Check migration status
+npx prisma migrate dev --create-only     # Generate migration SQL without applying
+```
+
+### Schema & Introspection
+
+```bash
+npx prisma db push                       # Push schema to DB without migration history
+npx prisma db pull                       # Pull existing DB schema into schema.prisma
+npx prisma validate                      # Validate schema.prisma syntax
+npx prisma format                        # Format schema.prisma
+```
+
+### Debugging
+
+```bash
+npx prisma version                       # Show Prisma version info
+npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma  # Preview SQL
+```
+
+### Tips
+
+- After changing `schema.prisma`, always run `npx prisma generate`
+- To rename a column without data loss: use `--create-only`, edit the SQL, then apply
+- `migrate reset` drops everything — use only in development
+- `db push` is for prototyping — use `migrate dev` for tracked changes
 
 ## Docker Services
 
