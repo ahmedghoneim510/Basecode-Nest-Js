@@ -13,6 +13,8 @@ import { PasswordService } from './services/password.service';
 import { TokenService } from './services/token.service';
 import { OtpService } from './services/otp.service';
 import { UserEntity } from '../users/entities/user.entity';
+import { OtpType } from './enums/otp-type.enum';
+import { AUTH_MESSAGES } from './constants/auth-messages';
 import { RegisterDto } from './dto/register.dto';
 
 @Injectable()
@@ -35,7 +37,7 @@ export class AuthService {
     });
 
     if (existing) {
-      throw new ConflictException(this.trans.t('auth.email_exists'));
+      throw new ConflictException(this.trans.t(AUTH_MESSAGES.EMAIL_EXISTS));
     }
 
     const hashedPassword = await this.passwordService.hash(dto.password);
@@ -48,12 +50,12 @@ export class AuthService {
       },
     });
 
-    const otp = await this.otpService.create(user.id, 'EMAIL_VERIFICATION');
+    const otp = await this.otpService.create(user.id, OtpType.EMAIL_VERIFICATION);
     await this.mailQueue.sendVerificationEmail(user.email, otp);
 
     return this.response.success(
       { user: new UserEntity(user) },
-      'auth.register_success',
+      AUTH_MESSAGES.REGISTER_SUCCESS,
     );
   }
 
@@ -63,10 +65,10 @@ export class AuthService {
     const user = await this.findUserByEmailOrFail(email);
 
     if (user.isVerified) {
-      throw new BadRequestException(this.trans.t('auth.email_already_verified'));
+      throw new BadRequestException(this.trans.t(AUTH_MESSAGES.EMAIL_ALREADY_VERIFIED));
     }
 
-    await this.otpService.verify(user.id, code, 'EMAIL_VERIFICATION');
+    await this.otpService.verify(user.id, code, OtpType.EMAIL_VERIFICATION);
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -76,7 +78,7 @@ export class AuthService {
     const tokens = await this.tokenService.generateTokens(user.id, user.email);
     await this.tokenService.storeRefreshToken(user.id, tokens.refreshToken);
 
-    return this.response.success(tokens, 'auth.email_verified');
+    return this.response.success(tokens, AUTH_MESSAGES.EMAIL_VERIFIED);
   }
 
   // ─── RESEND VERIFICATION OTP ───────────────────────────────────────────────
@@ -85,13 +87,13 @@ export class AuthService {
     const user = await this.findUserByEmailOrFail(email);
 
     if (user.isVerified) {
-      throw new BadRequestException(this.trans.t('auth.email_already_verified'));
+      throw new BadRequestException(this.trans.t(AUTH_MESSAGES.EMAIL_ALREADY_VERIFIED));
     }
 
-    const otp = await this.otpService.create(user.id, 'EMAIL_VERIFICATION');
+    const otp = await this.otpService.create(user.id, OtpType.EMAIL_VERIFICATION);
     await this.mailQueue.sendVerificationEmail(user.email, otp);
 
-    return this.response.message('auth.verification_otp_sent');
+    return this.response.message(AUTH_MESSAGES.VERIFICATION_OTP_SENT);
   }
 
   // ─── LOGIN ─────────────────────────────────────────────────────────────────
@@ -108,7 +110,7 @@ export class AuthService {
 
   async login(user: { id: number; email: string; isVerified: boolean }) {
     if (!user.isVerified) {
-      throw new ForbiddenException(this.trans.t('auth.login_unverified'));
+      throw new ForbiddenException(this.trans.t(AUTH_MESSAGES.LOGIN_UNVERIFIED));
     }
 
     const tokens = await this.tokenService.generateTokens(user.id, user.email);
@@ -116,7 +118,7 @@ export class AuthService {
 
     return this.response.success(
       { user: new UserEntity(user), ...tokens },
-      'auth.login_success',
+      AUTH_MESSAGES.LOGIN_SUCCESS,
     );
   }
 
@@ -132,7 +134,7 @@ export class AuthService {
 
   async logout(userId: number) {
     await this.tokenService.revokeRefreshToken(userId);
-    return this.response.message('auth.logged_out');
+    return this.response.message(AUTH_MESSAGES.LOGGED_OUT);
   }
 
   // ─── FORGOT PASSWORD ───────────────────────────────────────────────────────
@@ -141,11 +143,11 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { email } });
 
     if (user) {
-      const otp = await this.otpService.create(user.id, 'PASSWORD_RESET');
+      const otp = await this.otpService.create(user.id, OtpType.PASSWORD_RESET);
       await this.mailQueue.sendPasswordResetEmail(user.email, otp);
     }
 
-    return this.response.message('auth.reset_email_sent');
+    return this.response.message(AUTH_MESSAGES.RESET_EMAIL_SENT);
   }
 
   // ─── RESET PASSWORD ────────────────────────────────────────────────────────
@@ -153,7 +155,7 @@ export class AuthService {
   async resetPassword(email: string, code: string, newPassword: string) {
     const user = await this.findUserByEmailOrFail(email);
 
-    await this.otpService.verify(user.id, code, 'PASSWORD_RESET');
+    await this.otpService.verify(user.id, code, OtpType.PASSWORD_RESET);
 
     const hashedPassword = await this.passwordService.hash(newPassword);
 
@@ -165,7 +167,7 @@ export class AuthService {
       },
     });
 
-    return this.response.message('auth.password_reset');
+    return this.response.message(AUTH_MESSAGES.PASSWORD_RESET);
   }
 
   // ─── CHANGE PASSWORD ───────────────────────────────────────────────────────
@@ -176,7 +178,7 @@ export class AuthService {
 
     const isValid = await this.passwordService.compare(currentPassword, user.password);
     if (!isValid) {
-      throw new BadRequestException(this.trans.t('auth.current_password_incorrect'));
+      throw new BadRequestException(this.trans.t(AUTH_MESSAGES.CURRENT_PASSWORD_INCORRECT));
     }
 
     const hashedPassword = await this.passwordService.hash(newPassword);
@@ -192,7 +194,7 @@ export class AuthService {
     const tokens = await this.tokenService.generateTokens(user.id, user.email);
     await this.tokenService.storeRefreshToken(user.id, tokens.refreshToken);
 
-    return this.response.success(tokens, 'auth.password_changed');
+    return this.response.success(tokens, AUTH_MESSAGES.PASSWORD_CHANGED);
   }
 
   // ─── GET PROFILE ───────────────────────────────────────────────────────────
@@ -208,7 +210,7 @@ export class AuthService {
   private async findUserByEmailOrFail(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
-      throw new BadRequestException(this.trans.t('auth.invalid_email'));
+      throw new BadRequestException(this.trans.t(AUTH_MESSAGES.INVALID_EMAIL));
     }
     return user;
   }

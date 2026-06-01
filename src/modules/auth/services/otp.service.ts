@@ -2,8 +2,8 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service';
 import { TranslationService } from '../../../shared/i18n/translation.service';
-
-type OtpType = 'EMAIL_VERIFICATION' | 'PASSWORD_RESET';
+import { OtpType } from '../enums/otp-type.enum';
+import { AUTH_MESSAGES } from '../constants/auth-messages';
 
 const OTP_EXPIRY_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
@@ -18,7 +18,6 @@ export class OtpService {
   ) {}
 
   async create(userId: number, type: OtpType): Promise<string> {
-    // Invalidate previous OTPs of same type
     await this.prisma.otp.updateMany({
       where: { userId, type, used: false },
       data: { used: true },
@@ -41,7 +40,6 @@ export class OtpService {
   }
 
   async verify(userId: number, code: string, type: OtpType): Promise<void> {
-    // Check attempt count (brute-force protection)
     const recentAttempts = await this.prisma.otp.count({
       where: {
         userId,
@@ -51,10 +49,10 @@ export class OtpService {
     });
 
     if (recentAttempts > OTP_MAX_ATTEMPTS) {
-      throw new BadRequestException(this.trans.t('auth.otp_too_many_attempts'));
+      throw new BadRequestException(this.trans.t(AUTH_MESSAGES.OTP_TOO_MANY_ATTEMPTS));
     }
 
-    const otps = await this.prisma.otp.findMany({
+    const records = await this.prisma.otp.findMany({
       where: {
         userId,
         type,
@@ -65,15 +63,15 @@ export class OtpService {
       take: 1,
     });
 
-    if (otps.length === 0) {
-      throw new BadRequestException(this.trans.t('auth.otp_expired'));
+    if (records.length === 0) {
+      throw new BadRequestException(this.trans.t(AUTH_MESSAGES.OTP_EXPIRED));
     }
 
-    const otp = otps[0];
+    const otp = records[0];
     const isValid = await bcrypt.compare(code, otp.code);
 
     if (!isValid) {
-      throw new BadRequestException(this.trans.t('auth.otp_invalid'));
+      throw new BadRequestException(this.trans.t(AUTH_MESSAGES.OTP_INVALID));
     }
 
     await this.prisma.otp.update({
