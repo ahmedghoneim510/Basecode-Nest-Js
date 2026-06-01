@@ -15,67 +15,78 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import { CurrentUser } from '../../common/decorators';
+import { AuthThrottle } from './decorators/auth-throttle.decorator';
 
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
+  // ─── Public endpoints ────────────────────────────────────────────────────
+
   @Post('register')
-  async register(@Body() dto: RegisterDto) {
+  @AuthThrottle()
+  register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
   @Post('verify-email')
-  async verifyEmail(@Body() dto: VerifyOtpDto) {
+  @AuthThrottle()
+  verifyEmail(@Body() dto: VerifyOtpDto) {
     return this.authService.verifyEmail(dto.email, dto.code);
   }
 
   @Post('resend-verification')
-  async resendVerification(@Body() dto: ForgotPasswordDto) {
+  @AuthThrottle()
+  resendVerification(@Body() dto: ForgotPasswordDto) {
     return this.authService.resendVerificationOtp(dto.email);
   }
 
-  @UseGuards(LocalAuthGuard)
   @Post('login')
-  async login(@CurrentUser() user, @Body() dto: LoginDto) {
+  @AuthThrottle()
+  @UseGuards(LocalAuthGuard)
+  login(@CurrentUser() user, @Body() _dto: LoginDto) {
     return this.authService.login(user);
   }
 
-  @Post('refresh')
-  async refresh(@Body() dto: RefreshTokenDto) {
-    return this.authService.refreshTokens(dto.refreshToken);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('logout')
-  async logout(@CurrentUser('id') userId: number) {
-    return this.authService.logout(userId);
-  }
-
   @Post('forgot-password')
-  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+  @AuthThrottle()
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto.email);
   }
 
   @Post('reset-password')
-  async resetPassword(@Body() dto: ResetPasswordDto) {
+  @AuthThrottle()
+  resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto.email, dto.code, dto.newPassword);
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Post('change-password')
-  async changePassword(@CurrentUser('id') userId: number, @Body() dto: ChangePasswordDto) {
-    return this.authService.changePassword(
-      userId,
-      dto.currentPassword,
-      dto.newPassword,
-    );
+  // ─── Token management ───────────────────────────────────────────────────
+
+  @Post('refresh')
+  @UseGuards(JwtRefreshGuard)
+  refresh(@CurrentUser() user: { id: number; email: string }, @Body() _dto: RefreshTokenDto) {
+    return this.authService.refreshTokens(user.id, user.email);
   }
 
+  @Post('logout')
   @UseGuards(JwtAuthGuard)
+  logout(@CurrentUser('id') userId: number) {
+    return this.authService.logout(userId);
+  }
+
+  // ─── Authenticated endpoints ────────────────────────────────────────────
+
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  changePassword(@CurrentUser('id') userId: number, @Body() dto: ChangePasswordDto) {
+    return this.authService.changePassword(userId, dto.currentPassword, dto.newPassword);
+  }
+
   @Get('profile')
-  async getProfile(@CurrentUser('id') userId: number) {
+  @UseGuards(JwtAuthGuard)
+  getProfile(@CurrentUser('id') userId: number) {
     return this.authService.getProfile(userId);
   }
 }

@@ -5,22 +5,23 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MailQueueService } from '../../infrastructure/mail/mail-queue.service';
 import { TranslationService } from '../../shared/i18n/translation.service';
+import { PasswordService } from './services/password.service';
+import { TokenService } from './services/token.service';
+import { OtpService } from './services/otp.service';
 import { RegisterDto } from './dto/register.dto';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService,
-    private jwtService: JwtService,
-    private config: ConfigService,
     private mailQueue: MailQueueService,
     private trans: TranslationService,
+    private passwordService: PasswordService,
+    private tokenService: TokenService,
+    private otpService: OtpService,
   ) {}
 
   // ─── REGISTER ──────────────────────────────────────────────────────────────
@@ -34,7 +35,7 @@ export class AuthService {
       throw new ConflictException(this.trans.t('auth.email_exists'));
     }
 
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
+    const hashedPassword = await this.passwordService.hash(dto.password);
 
     const user = await this.prisma.user.create({
       data: {
@@ -44,7 +45,7 @@ export class AuthService {
       },
     });
 
-    const otp = await this.createOtp(user.id, 'EMAIL_VERIFICATION');
+    const otp = await this.otpService.create(user.id, 'EMAIL_VERIFICATION');
     await this.mailQueue.sendVerificationEmail(user.email, otp);
 
     const { password, refreshToken, ...result } = user;
@@ -57,24 +58,21 @@ export class AuthService {
   // ─── VERIFY EMAIL ──────────────────────────────────────────────────────────
 
   async verifyEmail(email: string, code: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      throw new BadRequestException(this.trans.t('auth.invalid_email'));
-    }
+    const user = await this.findUserByEmailOrFail(email);
 
     if (user.isVerified) {
       throw new BadRequestException(this.trans.t('auth.email_already_verified'));
     }
 
-    await this.verifyOtp(user.id, code, 'EMAIL_VERIFICATION');
+    await this.otpService.verify(user.id, code, 'EMAIL_VERIFICATION');
 
     await this.prisma.user.update({
       where: { id: user.id },
       data: { isVerified: true },
     });
 
-    const tokens = await this.generateTokens(user.id, user.email);
-    await this.updateRefreshToken(user.id, tokens.refreshToken);
+    const tokens = await this.tokenService.generateTokens(user.id, user.email);
+    await this.tokenService.storeRefreshToken(user.id, tokens.refreshToken);
 
     return {
       message: this.trans.t('auth.email_verified'),
@@ -85,16 +83,13 @@ export class AuthService {
   // ─── RESEND VERIFICATION OTP ───────────────────────────────────────────────
 
   async resendVerificationOtp(email: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      throw new BadRequestException(this.trans.t('auth.invalid_email'));
-    }
+    const user = await this.findUserByEmailOrFail(email);
 
     if (user.isVerified) {
       throw new BadRequestException(this.trans.t('auth.email_already_verified'));
     }
 
-    const otp = await this.createOtp(user.id, 'EMAIL_VERIFICATION');
+    const otp = await this.otpService.create(user.id, 'EMAIL_VERIFICATION');
     await this.mailQueue.sendVerificationEmail(user.email, otp);
 
     return { message: this.trans.t('auth.verification_otp_sent') };
@@ -104,15 +99,10 @@ export class AuthService {
 
   async validateUser(email: string, password: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) return null;
 
-    if (!user) {
-      return null;
-    }
-
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      return null;
-    }
+    const isValid = await this.passwordService.compare(password, user.password);
+    if (!isValid) return null;
 
     const { password: _, refreshToken, ...result } = user;
     return result;
@@ -123,8 +113,8 @@ export class AuthService {
       throw new ForbiddenException(this.trans.t('auth.login_unverified'));
     }
 
-    const tokens = await this.generateTokens(user.id, user.email);
-    await this.updateRefreshToken(user.id, tokens.refreshToken);
+    const tokens = await this.tokenService.generateTokens(user.id, user.email);
+    await this.tokenService.storeRefreshToken(user.id, tokens.refreshToken);
 
     const { isVerified, ...userData } = user;
     return {
@@ -135,46 +125,16 @@ export class AuthService {
 
   // ─── REFRESH TOKEN ─────────────────────────────────────────────────────────
 
-  async refreshTokens(refreshToken: string) {
-    try {
-      const payload = this.jwtService.verify(refreshToken, {
-        secret: this.config.get('jwt.refreshSecret'),
-      });
-
-      const user = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
-      });
-
-      if (!user || !user.refreshToken) {
-        throw new ForbiddenException(this.trans.t('auth.access_denied'));
-      }
-
-      const isRefreshTokenValid = await bcrypt.compare(
-        refreshToken,
-        user.refreshToken,
-      );
-
-      if (!isRefreshTokenValid) {
-        throw new ForbiddenException(this.trans.t('auth.access_denied'));
-      }
-
-      const tokens = await this.generateTokens(user.id, user.email);
-      await this.updateRefreshToken(user.id, tokens.refreshToken);
-
-      return tokens;
-    } catch {
-      throw new ForbiddenException(this.trans.t('auth.invalid_refresh_token'));
-    }
+  async refreshTokens(userId: number, email: string) {
+    const tokens = await this.tokenService.generateTokens(userId, email);
+    await this.tokenService.storeRefreshToken(userId, tokens.refreshToken);
+    return tokens;
   }
 
   // ─── LOGOUT ────────────────────────────────────────────────────────────────
 
   async logout(userId: number) {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { refreshToken: null },
-    });
-
+    await this.tokenService.revokeRefreshToken(userId);
     return { message: this.trans.t('auth.logged_out') };
   }
 
@@ -183,12 +143,11 @@ export class AuthService {
   async forgotPassword(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
 
-    if (!user) {
-      return { message: this.trans.t('auth.reset_email_sent') };
+    // Don't reveal if user exists (security best practice)
+    if (user) {
+      const otp = await this.otpService.create(user.id, 'PASSWORD_RESET');
+      await this.mailQueue.sendPasswordResetEmail(user.email, otp);
     }
-
-    const otp = await this.createOtp(user.id, 'PASSWORD_RESET');
-    await this.mailQueue.sendPasswordResetEmail(user.email, otp);
 
     return { message: this.trans.t('auth.reset_email_sent') };
   }
@@ -196,20 +155,17 @@ export class AuthService {
   // ─── RESET PASSWORD ────────────────────────────────────────────────────────
 
   async resetPassword(email: string, code: string, newPassword: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      throw new BadRequestException(this.trans.t('auth.invalid_request'));
-    }
+    const user = await this.findUserByEmailOrFail(email);
 
-    await this.verifyOtp(user.id, code, 'PASSWORD_RESET');
+    await this.otpService.verify(user.id, code, 'PASSWORD_RESET');
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await this.passwordService.hash(newPassword);
 
     await this.prisma.user.update({
       where: { id: user.id },
       data: {
         password: hashedPassword,
-        refreshToken: null,
+        refreshToken: null, // revoke all sessions
       },
     });
 
@@ -220,16 +176,14 @@ export class AuthService {
 
   async changePassword(userId: number, currentPassword: string, newPassword: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new UnauthorizedException();
-    }
+    if (!user) throw new UnauthorizedException();
 
-    const isValid = await bcrypt.compare(currentPassword, user.password);
+    const isValid = await this.passwordService.compare(currentPassword, user.password);
     if (!isValid) {
       throw new BadRequestException(this.trans.t('auth.current_password_incorrect'));
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await this.passwordService.hash(newPassword);
 
     await this.prisma.user.update({
       where: { id: userId },
@@ -239,8 +193,8 @@ export class AuthService {
       },
     });
 
-    const tokens = await this.generateTokens(user.id, user.email);
-    await this.updateRefreshToken(user.id, tokens.refreshToken);
+    const tokens = await this.tokenService.generateTokens(user.id, user.email);
+    await this.tokenService.storeRefreshToken(user.id, tokens.refreshToken);
 
     return {
       message: this.trans.t('auth.password_changed'),
@@ -252,88 +206,19 @@ export class AuthService {
 
   async getProfile(userId: number) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new UnauthorizedException();
-    }
+    if (!user) throw new UnauthorizedException();
 
     const { password, refreshToken, ...result } = user;
     return result;
   }
 
-  // ─── HELPERS ───────────────────────────────────────────────────────────────
+  // ─── PRIVATE HELPERS ───────────────────────────────────────────────────────
 
-  private async createOtp(userId: number, type: 'EMAIL_VERIFICATION' | 'PASSWORD_RESET'): Promise<string> {
-    await this.prisma.otp.updateMany({
-      where: { userId, type, used: false },
-      data: { used: true },
-    });
-
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-    await this.prisma.otp.create({
-      data: {
-        code: await bcrypt.hash(code, 10),
-        type,
-        expiresAt,
-        userId,
-      },
-    });
-
-    return code;
-  }
-
-  private async verifyOtp(userId: number, code: string, type: 'EMAIL_VERIFICATION' | 'PASSWORD_RESET') {
-    const otps = await this.prisma.otp.findMany({
-      where: {
-        userId,
-        type,
-        used: false,
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 1,
-    });
-
-    if (otps.length === 0) {
-      throw new BadRequestException(this.trans.t('auth.otp_expired'));
+  private async findUserByEmailOrFail(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      throw new BadRequestException(this.trans.t('auth.invalid_email'));
     }
-
-    const otp = otps[0];
-    const isValid = await bcrypt.compare(code, otp.code);
-
-    if (!isValid) {
-      throw new BadRequestException(this.trans.t('auth.otp_invalid'));
-    }
-
-    await this.prisma.otp.update({
-      where: { id: otp.id },
-      data: { used: true },
-    });
-  }
-
-  private async generateTokens(userId: number, email: string) {
-    const payload = { sub: userId, email };
-
-    const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync(payload, {
-        secret: this.config.get('jwt.secret'),
-        expiresIn: this.config.get('jwt.expiration', '15m'),
-      }),
-      this.jwtService.signAsync(payload, {
-        secret: this.config.get('jwt.refreshSecret'),
-        expiresIn: this.config.get('jwt.refreshExpiration', '7d'),
-      }),
-    ]);
-
-    return { accessToken, refreshToken };
-  }
-
-  private async updateRefreshToken(userId: number, refreshToken: string) {
-    const hashed = await bcrypt.hash(refreshToken, 10);
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { refreshToken: hashed },
-    });
+    return user;
   }
 }
