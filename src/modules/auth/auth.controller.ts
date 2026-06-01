@@ -19,50 +19,41 @@ import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import { CurrentUser } from '../../common/decorators';
 import { AuthThrottle } from './decorators/auth-throttle.decorator';
 
+@AuthThrottle()
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
-  // ─── Public endpoints ────────────────────────────────────────────────────
-
   @Post('register')
-  @AuthThrottle()
   register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
   @Post('verify-email')
-  @AuthThrottle()
   verifyEmail(@Body() dto: VerifyOtpDto) {
     return this.authService.verifyEmail(dto.email, dto.code);
   }
 
   @Post('resend-verification')
-  @AuthThrottle()
   resendVerification(@Body() dto: ForgotPasswordDto) {
     return this.authService.resendVerificationOtp(dto.email);
   }
 
   @Post('login')
-  @AuthThrottle()
   @UseGuards(LocalAuthGuard)
   login(@CurrentUser() user, @Body() _dto: LoginDto) {
     return this.authService.login(user);
   }
 
   @Post('forgot-password')
-  @AuthThrottle()
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto.email);
   }
 
   @Post('reset-password')
-  @AuthThrottle()
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto.email, dto.code, dto.newPassword);
   }
-
-  // ─── Token management ───────────────────────────────────────────────────
 
   @Post('refresh')
   @UseGuards(JwtRefreshGuard)
@@ -75,8 +66,6 @@ export class AuthController {
   logout(@CurrentUser('id') userId: number) {
     return this.authService.logout(userId);
   }
-
-  // ─── Authenticated endpoints ────────────────────────────────────────────
 
   @Post('change-password')
   @UseGuards(JwtAuthGuard)
