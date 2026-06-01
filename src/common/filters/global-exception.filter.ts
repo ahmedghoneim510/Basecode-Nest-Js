@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { ApiResponse } from '../../shared/response/response.interface';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -15,14 +16,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest();
 
-    let status = HttpStatus.INTERNAL_SERVER_ERROR;
+    let statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
     let errors: any = undefined;
 
     if (exception instanceof HttpException) {
-      status = exception.getStatus();
+      statusCode = exception.getStatus();
       const exceptionResponse = exception.getResponse();
 
       if (typeof exceptionResponse === 'string') {
@@ -31,7 +31,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         const res = exceptionResponse as any;
         message = res.message || exception.message;
 
-        // Handle class-validator errors
+        // Handle class-validator validation errors
         if (Array.isArray(res.message)) {
           message = 'Validation failed';
           errors = res.message;
@@ -45,15 +45,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       );
     }
 
-    response.status(status).json({
+    const body: ApiResponse<null> = {
       success: false,
+      statusCode,
       message,
       data: null,
-      errors,
-      ...(process.env.NODE_ENV === 'development' && {
-        path: request.url,
-        timestamp: new Date().toISOString(),
-      }),
-    });
+      ...(errors && { errors }),
+    };
+
+    response.status(statusCode).json(body);
   }
 }

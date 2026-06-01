@@ -9,9 +9,8 @@ import { Observable, map } from 'rxjs';
 import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
 
 /**
- * Automatically sets correct HTTP status codes:
- * - POST that creates a resource (response has data.id) → 201
- * - All other POST → 200
+ * Syncs the HTTP status code with the response body's statusCode field.
+ * - If response body has `statusCode` (from ResponseService), use it as HTTP status
  * - Respects explicit @HttpCode() if set
  */
 @Injectable()
@@ -22,16 +21,15 @@ export class ResponseTransformInterceptor implements NestInterceptor {
     return next.handle().pipe(
       map((data) => {
         const response = context.switchToHttp().getResponse();
-        const request = context.switchToHttp().getRequest();
 
+        // If @HttpCode() was explicitly set, don't override
         const explicitCode = this.reflector.get<number>(
           HTTP_CODE_METADATA,
           context.getHandler(),
         );
 
-        if (!explicitCode && request.method === 'POST') {
-          const isCreation = data?.data?.id !== undefined;
-          response.statusCode = isCreation ? 201 : 200;
+        if (!explicitCode && data?.statusCode) {
+          response.statusCode = data.statusCode;
         }
 
         return data;

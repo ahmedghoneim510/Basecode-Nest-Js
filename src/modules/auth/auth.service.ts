@@ -8,9 +8,11 @@ import {
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MailQueueService } from '../../infrastructure/mail/mail-queue.service';
 import { TranslationService } from '../../shared/i18n/translation.service';
+import { ResponseService } from '../../shared/response/response.service';
 import { PasswordService } from './services/password.service';
 import { TokenService } from './services/token.service';
 import { OtpService } from './services/otp.service';
+import { UserEntity } from '../users/entities/user.entity';
 import { RegisterDto } from './dto/register.dto';
 
 @Injectable()
@@ -19,6 +21,7 @@ export class AuthService {
     private prisma: PrismaService,
     private mailQueue: MailQueueService,
     private trans: TranslationService,
+    private response: ResponseService,
     private passwordService: PasswordService,
     private tokenService: TokenService,
     private otpService: OtpService,
@@ -48,11 +51,10 @@ export class AuthService {
     const otp = await this.otpService.create(user.id, 'EMAIL_VERIFICATION');
     await this.mailQueue.sendVerificationEmail(user.email, otp);
 
-    const { password, refreshToken, ...result } = user;
-    return {
-      message: this.trans.t('auth.register_success'),
-      user: result,
-    };
+    return this.response.success(
+      { user: new UserEntity(user) },
+      'auth.register_success',
+    );
   }
 
   // ─── VERIFY EMAIL ──────────────────────────────────────────────────────────
@@ -74,10 +76,7 @@ export class AuthService {
     const tokens = await this.tokenService.generateTokens(user.id, user.email);
     await this.tokenService.storeRefreshToken(user.id, tokens.refreshToken);
 
-    return {
-      message: this.trans.t('auth.email_verified'),
-      ...tokens,
-    };
+    return this.response.success(tokens, 'auth.email_verified');
   }
 
   // ─── RESEND VERIFICATION OTP ───────────────────────────────────────────────
@@ -92,7 +91,7 @@ export class AuthService {
     const otp = await this.otpService.create(user.id, 'EMAIL_VERIFICATION');
     await this.mailQueue.sendVerificationEmail(user.email, otp);
 
-    return { message: this.trans.t('auth.verification_otp_sent') };
+    return this.response.message('auth.verification_otp_sent');
   }
 
   // ─── LOGIN ─────────────────────────────────────────────────────────────────
@@ -104,8 +103,7 @@ export class AuthService {
     const isValid = await this.passwordService.compare(password, user.password);
     if (!isValid) return null;
 
-    const { password: _, refreshToken, ...result } = user;
-    return result;
+    return user;
   }
 
   async login(user: { id: number; email: string; isVerified: boolean }) {
@@ -116,11 +114,10 @@ export class AuthService {
     const tokens = await this.tokenService.generateTokens(user.id, user.email);
     await this.tokenService.storeRefreshToken(user.id, tokens.refreshToken);
 
-    const { isVerified, ...userData } = user;
-    return {
-      user: userData,
-      ...tokens,
-    };
+    return this.response.success(
+      { user: new UserEntity(user), ...tokens },
+      'auth.login_success',
+    );
   }
 
   // ─── REFRESH TOKEN ─────────────────────────────────────────────────────────
@@ -128,14 +125,14 @@ export class AuthService {
   async refreshTokens(userId: number, email: string) {
     const tokens = await this.tokenService.generateTokens(userId, email);
     await this.tokenService.storeRefreshToken(userId, tokens.refreshToken);
-    return tokens;
+    return this.response.success(tokens);
   }
 
   // ─── LOGOUT ────────────────────────────────────────────────────────────────
 
   async logout(userId: number) {
     await this.tokenService.revokeRefreshToken(userId);
-    return { message: this.trans.t('auth.logged_out') };
+    return this.response.message('auth.logged_out');
   }
 
   // ─── FORGOT PASSWORD ───────────────────────────────────────────────────────
@@ -143,13 +140,12 @@ export class AuthService {
   async forgotPassword(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
 
-    // Don't reveal if user exists (security best practice)
     if (user) {
       const otp = await this.otpService.create(user.id, 'PASSWORD_RESET');
       await this.mailQueue.sendPasswordResetEmail(user.email, otp);
     }
 
-    return { message: this.trans.t('auth.reset_email_sent') };
+    return this.response.message('auth.reset_email_sent');
   }
 
   // ─── RESET PASSWORD ────────────────────────────────────────────────────────
@@ -165,11 +161,11 @@ export class AuthService {
       where: { id: user.id },
       data: {
         password: hashedPassword,
-        refreshToken: null, // revoke all sessions
+        refreshToken: null,
       },
     });
 
-    return { message: this.trans.t('auth.password_reset') };
+    return this.response.message('auth.password_reset');
   }
 
   // ─── CHANGE PASSWORD ───────────────────────────────────────────────────────
@@ -196,10 +192,7 @@ export class AuthService {
     const tokens = await this.tokenService.generateTokens(user.id, user.email);
     await this.tokenService.storeRefreshToken(user.id, tokens.refreshToken);
 
-    return {
-      message: this.trans.t('auth.password_changed'),
-      ...tokens,
-    };
+    return this.response.success(tokens, 'auth.password_changed');
   }
 
   // ─── GET PROFILE ───────────────────────────────────────────────────────────
@@ -207,9 +200,7 @@ export class AuthService {
   async getProfile(userId: number) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
-
-    const { password, refreshToken, ...result } = user;
-    return result;
+    return this.response.success(new UserEntity(user));
   }
 
   // ─── PRIVATE HELPERS ───────────────────────────────────────────────────────
