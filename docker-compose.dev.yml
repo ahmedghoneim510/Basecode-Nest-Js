@@ -1,9 +1,8 @@
 services:
-  # ─── NestJS App ──────────────────────────────────────────────────
   app:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: nestjs_app
     restart: always
     ports:
@@ -11,15 +10,15 @@ services:
     env_file:
       - .env.docker
     volumes:
-      - uploads_data:/app/uploads
+      - .:/app
+      - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: sh -c "npx prisma migrate deploy && node dist/src/main.js"
+    command: sh -c "npx prisma migrate deploy && npm run start:dev"
 
-  # ─── PostgreSQL ──────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: postgres_db
@@ -38,7 +37,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── Redis ───────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: redis_cache
@@ -53,7 +51,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── PgAdmin (optional, for development) ─────────────────────────
   pgadmin:
     image: dpage/pgadmin4
     container_name: pgadmin_ui
@@ -65,10 +62,7 @@ services:
       - "5050:80"
     depends_on:
       - postgres
-    profiles:
-      - dev
 
 volumes:
   pgdata:
   redis_data:
-  uploads_data:
