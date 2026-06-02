@@ -14,10 +14,11 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
-    "incremental": true,
+    "incremental": false,
     "skipLibCheck": true,
     "paths": {
-      "@prisma/client": ["./node_modules/.prisma/client"]
+      "@prisma/client": ["./node_modules/.prisma/client"],
+      "@prisma/client/*": ["./node_modules/.prisma/client/*"]
     },
     "strictNullChecks": true,
     "forceConsistentCasingInFileNames": true,

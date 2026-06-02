@@ -62,3 +62,42 @@ model Profile {
   userId  Int  @unique
   user    User @relation(fields: [userId], references: [id])
 }
+
+model Media {
+  id             Int      @id @default(autoincrement())
+  uuid           String   @unique @default(uuid())
+  fileName       String
+  originalName   String
+  extension      String
+  mimeType       String
+  size           Int
+  disk           String   @default("local")
+  directory      String
+  collectionName String   @default("default")
+  modelType      String
+  modelId        Int
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  conversions MediaConversion[]
+
+  @@index([modelType, modelId])
+  @@index([modelType, modelId, collectionName])
+}
+
+model MediaConversion {
+  id        Int      @id @default(autoincrement())
+  mediaId   Int
+  media     Media    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  name      String
+  fileName  String
+  directory String
+  mimeType  String
+  size      Int
+  width     Int?
+  height    Int?
+  createdAt DateTime @default(now())
+
+  @@unique([mediaId, name])
+}

@@ -13,6 +13,7 @@ import {
   redisConfig,
   mailConfig,
   throttleConfig,
+  storageConfig,
 } from './config';
 
 // Infrastructure
@@ -20,6 +21,7 @@ import { PrismaModule } from './infrastructure/prisma';
 import { RedisCacheModule } from './infrastructure/cache';
 import { QueueModule } from './infrastructure/queue';
 import { MailModule } from './infrastructure/mail';
+import { StorageModule } from './infrastructure/storage/storage.module';
 
 // Shared
 import { TranslationModule } from './shared/i18n/i18n.module';
@@ -28,6 +30,7 @@ import { ResponseModule } from './shared/response/response.module';
 // Feature Modules
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { MediaModule } from './modules/media/media.module';
 
 // App
 import { AppController } from './app.controller';
@@ -38,7 +41,7 @@ import { AppService } from './app.service';
     // ─── Configuration ─────────────────────────────────────────────────
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, jwtConfig, redisConfig, mailConfig, throttleConfig],
+      load: [appConfig, databaseConfig, jwtConfig, redisConfig, mailConfig, throttleConfig, storageConfig],
     }),
 
     // ─── i18n ──────────────────────────────────────────────────────────
@@ -69,6 +72,7 @@ import { AppService } from './app.service';
     RedisCacheModule,
     QueueModule,
     MailModule,
+    StorageModule,
 
     // ─── Shared ────────────────────────────────────────────────────────
     TranslationModule,
@@ -77,6 +81,7 @@ import { AppService } from './app.service';
     // ─── Feature Modules ───────────────────────────────────────────────
     AuthModule,
     UsersModule,
+    MediaModule,
   ],
   controllers: [AppController],
   providers: [

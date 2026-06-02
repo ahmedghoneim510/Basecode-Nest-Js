@@ -1,7 +1,9 @@
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ClassSerializerInterceptor, Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
+import * as path from 'path';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters';
 import { LoggingInterceptor, ResponseTransformInterceptor } from './common/interceptors';
@@ -9,9 +11,13 @@ import { PrismaExceptionFilter } from './infrastructure/prisma';
 import { validationConfig } from './config';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
+
+  // Static files (serve uploaded files)
+  const uploadDir = config.get('storage.local.uploadDir', './uploads');
+  app.useStaticAssets(path.resolve(uploadDir), { prefix: '/uploads' });
 
   // Security
   app.use(helmet());
