@@ -2,6 +2,7 @@ import { NestFactory, Reflector } from '@nestjs/core';
 import { ClassSerializerInterceptor, Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import * as path from 'path';
 import { AppModule } from './app.module';
@@ -18,6 +19,16 @@ async function bootstrap() {
   // Static files (serve uploaded files)
   const uploadDir = config.get('storage.local.uploadDir', './uploads');
   app.useStaticAssets(path.resolve(uploadDir), { prefix: '/uploads' });
+
+  // Swagger (API docs)
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('NestJS Enterprise API')
+    .setDescription('Production-ready REST API')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api/docs', app, document);
 
   // Security
   app.use(helmet());
