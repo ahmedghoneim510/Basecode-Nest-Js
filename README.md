@@ -209,12 +209,88 @@ npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma 
 - `migrate reset` drops everything — use only in development
 - `db push` is for prototyping — use `migrate dev` for tracked changes
 
-## Docker Services
+## Docker
+
+### Development (hot-reload)
 
 ```bash
-docker compose up -d    # Start PostgreSQL + PgAdmin
+docker compose -f docker-compose.dev.yml up -d --build
 ```
 
-- **PostgreSQL**: `localhost:5433`
-- **PgAdmin**: `localhost:5050` (admin@admin.com / admin)
-- **Redis**: `localhost:6379`
+- Mounts source code, runs `npm run start:dev`
+- File changes reflect instantly
+- Includes PgAdmin
+
+### Staging
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
+```
+
+### Production
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
+```
+
+### Common Docker Commands
+
+```bash
+# View app logs (live)
+docker compose -f docker-compose.dev.yml logs -f app
+
+# Stop dev
+docker compose -f docker-compose.dev.yml down
+
+# Stop staging
+docker compose -f docker-compose.yml -f docker-compose.staging.yml down
+
+# Stop production
+docker compose -f docker-compose.yml -f docker-compose.production.yml down
+
+# Stop + delete all data (fresh start)
+docker compose -f docker-compose.dev.yml down -v
+
+# Rebuild only the app (skip DB/Redis rebuild)
+docker compose -f docker-compose.dev.yml up -d --build app
+
+# Run a command inside the app container
+docker compose -f docker-compose.dev.yml exec app npx prisma studio
+
+# Run migrations inside container
+docker compose -f docker-compose.dev.yml exec app npx prisma migrate dev --name <name>
+
+# Seed database inside container
+docker compose -f docker-compose.dev.yml exec app npx prisma db seed
+
+# Check container status
+docker compose -f docker-compose.dev.yml ps
+
+# Restart app container only
+docker compose -f docker-compose.dev.yml restart app
+```
+
+### Docker Files
+
+```
+Dockerfile.dev                  ← Dev: installs deps, runs start:dev (watch mode)
+Dockerfile                      ← Production: multi-stage build, compiled dist/
+
+docker-compose.dev.yml          ← Dev environment (app + postgres + redis + pgadmin)
+docker-compose.yml              ← Base production services
+docker-compose.staging.yml      ← Staging overrides (env + DB creds)
+docker-compose.production.yml   ← Production overrides (env + Redis pass + limits)
+
+.env.docker                     ← Dev environment variables
+.env.staging                    ← Staging environment variables
+.env.production                 ← Production environment variables
+```
+
+### Services & Ports
+
+| Service | Dev | Staging/Prod | URL |
+|---------|-----|-------------|-----|
+| App | ✓ | ✓ | http://localhost:3000 |
+| PostgreSQL | ✓ | ✓ | localhost:5433 |
+| Redis | ✓ | ✓ | localhost:6380 |
+| PgAdmin | ✓ | ✗ | http://localhost:5050 |
